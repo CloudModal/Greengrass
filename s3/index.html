@@ -1,0 +1,166 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+    <meta charset="utf-8">
+    <link rel="icon" href="https://static.jianshukeji.com/highcharts/images/favicon.ico">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        text.highcharts-credits {
+            display: none;
+        }
+    </style>
+    <script src="https://code.highcharts.com.cn/jquery/jquery-1.8.3.min.js"></script>
+    <script src="https://code.highcharts.com.cn/highcharts/highcharts.js"></script>
+    <script src="https://code.highcharts.com.cn/highcharts/modules/exporting.js"></script>
+    <script src="https://code.highcharts.com.cn/highcharts/modules/data.js"></script>
+    <script src="https://code.highcharts.com.cn/highcharts/modules/series-label.js"></script>
+    <script src="https://code.highcharts.com.cn/highcharts/modules/oldie.js"></script>
+    <script src="https://img.hcharts.cn/highcharts-plugins/highcharts-zh_CN.js"></script>
+</head>
+<body>
+<div id="container" style="min-width:auto;height:auto"></div>
+<script type="application/javascript">
+    let urs = 'https://c01pdgo76d.execute-api.cn-north-1.amazonaws.com.cn/beta/Microservice?TableName=data_stream'
+
+    function create() {
+        let series = []
+        $.ajax({
+            type: "GET",
+            url: urs,
+            async: false, //表示同步，如果要得到ajax处理完后台数据后的返回值，最好这样设置
+            success: function (data) {
+                // 数据排序
+                data.sort(function (a, b) {
+                    return new Date(a.time_ns).getTime() - new Date(b.time_ns).getTime()
+                });
+                let aqiSeriesData = []
+                let coSeriesData = []
+                let humiditySeriesData = [];
+                let temperatureSeriesData = [];
+
+                for (let i = 0; i < data.length; i++) {
+                    let time = data[i]['timestamp'];
+                    let aqi = data[i]['AQI']
+                    let co = data[i]['CO']
+                    let humidity = data[i]['humidity'];
+                    let temperature = data[i]['temperature'];
+                    humiditySeriesData.push({x: time, y: humidity})
+                    temperatureSeriesData.push({x: time, y: temperature})
+                    aqiSeriesData.push({x: time, y: aqi})
+                    coSeriesData.push({x: time, y: co})
+                }
+                series.push({
+                    name: "温度",
+                    color: '#e01030',
+                    type: 'spline',
+                    yAxis: 0,
+                    data: temperatureSeriesData
+                });
+                series.push({name: "湿度", data: humiditySeriesData});
+                series.push({name: "空气质量", data: aqiSeriesData});
+                series.push({name: "可燃气体", data: coSeriesData});
+            }
+        }, false);  //false表示“遮罩”，前台不显示“请稍后”进度提示
+        return series;
+    }
+
+    Highcharts.setOptions({
+        global: {
+            useUTC: false
+        }
+    });
+
+    function activeLastPointToolip(chart) {
+        let points = chart.series[0].points;
+        chart.tooltip.refresh(points[points.length - 1]);
+    }
+
+    let max = 6;
+    let chart = Highcharts.chart('container', {
+        chart: {
+            type: 'spline',
+            animation: Highcharts.svg, // don't animate in old IE
+            marginRight: 20,
+            zoomType: 'xy', //双Y轴刻度
+            events: {
+                load: function () {
+                    let series = this.series,
+                        chart = this;
+                    activeLastPointToolip(chart);
+                    setInterval(function () {
+                        $.getJSON(urs, function (data) {
+                            // 数据排序
+                            data.sort(function (a, b) {
+                                return new Date(a['time_ns']).getTime() - new Date(b['time_ns']).getTime()
+                            });
+                            let x = data.pop().timestamp
+                            let temperature = data.pop()['temperature']
+                            let humidity = data.pop()['humidity']
+                            let aqi = data.pop()['aAQIqi']
+                            let co = data.pop()['CO']
+
+                            series[0].addPoint([x, temperature], true, true);
+                            series[1].addPoint([x, humidity], true, true);
+                            series[2].addPoint([x, aqi], true, true);
+                            series[3].addPoint([x, co], true, true);
+                            activeLastPointToolip(chart);
+                        })
+                    }, 10000);
+                }
+            }
+        },
+        title: {
+            text: '空气温度与湿度实时监控'
+        },
+        xAxis: [
+            {
+                type: 'datetime',
+                minRange: 40,
+                // minTickInterval: 120
+                tickPixelInterval: 120
+            }
+        ],
+        yAxis: [
+            {
+                title: {
+                    text: '浓度/分钟',
+                    style: {
+                        color: '#3E576F'
+                    }
+                }
+            },
+            {
+                title: {
+                    text: '平均浓度时间',
+                    style: {
+                        color: '#00AA00'
+                    }
+                },
+                opposite: true
+            }
+        ],
+        //图例样式设置
+        legend: {
+            layout: 'horizontal',
+            align: 'left',
+            x: 0,
+            verticalAlign: 'top',
+            y: 0,
+            floating: true,
+            backgroundColor: '#FFFFFF'
+        },
+        tooltip: {
+            formatter: function () {
+                return '<b>' + this.series.name + '</b><br/>' +
+                    Highcharts.dateFormat('%Y-%m-%d %H:%M:%S', this.x) + '<br/>' +
+                    Highcharts.numberFormat(this.y, 2);
+            }
+        },
+        exporting: {
+            enabled: true
+        },
+        series: create()
+    });
+</script>
+</body>
+</html>
